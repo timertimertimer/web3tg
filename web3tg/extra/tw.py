@@ -12,15 +12,15 @@ from random import uniform
 from dotenv import load_dotenv
 
 from twitter import Client, Account
-from twitter.errors import HTTPException, Unauthorized
+from twitter.errors import HTTPException, Unauthorized, BadToken
 from twitter.models import UserData
 from web3db import DBHelper
 
 from web3db.models import Profile
 
-from extra.logger import logger
-from extra.windows import set_windows_event_loop_policy
-from extra.web3 import get_evm_address, get_aptos_address, get_solana_address
+from logger import logger
+from windows import set_windows_event_loop_policy
+from web3 import get_evm_address, get_aptos_address, get_solana_address
 
 load_dotenv()
 set_windows_event_loop_policy()
@@ -51,13 +51,28 @@ class TwitterTaskManager:
         )
         self.profile = profile
 
+    def __repr__(self):
+        return str(self)
+
+    def __str__(self):
+        self.profile.twitter.auth_token = self.client.account.auth_token
+        return f'{self.profile.id} | {self.client.account.auth_token}'
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        if self.profile.twitter.auth_token != self.client.account.auth_token:
+            self.profile.twitter.auth_token = self.client.account.auth_token
+            await db.edit(self.profile)
+
     async def tweet(self, text: str, image: bytes = None) -> str:
         # TODO: обработку картинок
         try:
             tweet_id = await self.client.tweet(text)
             log = f'{self.profile.id} | {Tweet.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
             logger.success(log)
-        except (HTTPException, Unauthorized) as e:
+        except (HTTPException, Unauthorized, BadToken) as e:
             log = f'{self.profile.id} | {Tweet.error.format(username=self.profile.twitter.login, e=e)}'
             logger.error(log)
         return log
@@ -425,6 +440,21 @@ class Reply(TwitterInteraction, ABC):
         )
 
 
+class Unlock:
+    label: str = 'Change password'
+    success: str = TwitterInteraction.success + 'Unlocked'
+    error: str = '{username} | Failed to unlock account. {e} '
+
+    def __new__(cls):
+        raise NotImplementedError("Экземпляры класса Unlock не могут быть созданы")
+
+    @staticmethod
+    async def start(ttm: TwitterTaskManager) -> str:
+        await ttm.get_user_data()
+        await ttm.client.unlock()
+        return f'{ttm.profile.id} | Account status - {ttm.client.account.status}'
+
+
 class ChangePassword:
     label: str = 'Change password'
     success: str = TwitterInteraction.success + 'Changed password {password} to {new_password}. New auth token - {auth_token}'
@@ -454,7 +484,8 @@ class TwoFactor:
 
 twitter_account_settings = {
     'Change password': ChangePassword,
-    'Add 2FA': TwoFactor
+    'Add 2FA': TwoFactor,
+    'Unlock': Unlock,
 }
 twitter_actions = {
     'Tweet': Tweet,
