@@ -2,9 +2,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, InlineKeyboardMarkup
 from web3db import *
 
-from extra.tw import twitter_actions
-from keyboards import fabrics
+from web3tg.utils.tw import twitter_actions
 from .states import SocialTasks, ProfilesTasks
+from web3tg.keyboards import fabrics
 
 
 def get_social_tasks_buttons(social: str) -> dict:
@@ -45,6 +45,15 @@ async def show_profiles_tasks(message: Message, state: FSMContext):
     await state.set_state(ProfilesTasks.CHOOSE_TASK)
 
 
+def get_text_for_current_page_profiles(profiles: list[Profile], page: int):
+    text = '<b>Введите id профилей</b>\n'
+    for profile_id, login, ready in profiles[page * 10:(page + 1) * 10]:  # type: Profile
+        line = f'{profile_id} | {login}'
+        line = f'<b><i>{line}</i></b>' if ready else line
+        text += line + '\n'
+    return text
+
+
 help_string = """
 Формат CSV
 Первая строка в файле задает формат данных. 
@@ -66,7 +75,9 @@ input_data_types_buttons = {
     'По промпту': 'Сгенерировать по промпту',
     'EVM': 'Кошелек евм',
     'Aptos': 'Кошелек аптос',
-    'Solana': 'Кошелек солана'
+    'Solana': 'Кошелек солана',
+    'Bitcoin (Segwit)': 'Кошелек биткоин (Segwit)',
+    'Bitcoin (Taproot)': 'Кошелек биткоин (Taproot)'
 }
 profiles_amount_type = [
     'IDs',

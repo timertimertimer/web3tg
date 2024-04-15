@@ -4,23 +4,18 @@ import secrets
 import string
 import g4f
 from abc import ABC, abstractmethod
-
 from json import JSONDecodeError
 from pathlib import Path
 from random import uniform
-
 from dotenv import load_dotenv
-
 from twitter import Client, Account
 from twitter.errors import HTTPException, Unauthorized, BadToken
 from twitter.models import UserData
 from web3db import DBHelper
 
 from web3db.models import Profile
-
-from logger import logger
-from windows import set_windows_event_loop_policy
-from web3 import get_evm_address, get_aptos_address, get_solana_address
+from .windows import set_windows_event_loop_policy
+from .logger import logger
 
 load_dotenv()
 set_windows_event_loop_policy()
@@ -280,9 +275,6 @@ class TwitterInteraction(ABC):
     error: str = '{username} | Failed to {action} {source}. {e}'
 
     def __init__(self, *args, **kwargs):
-        # self.username = kwargs.get('username')
-        # self.tweet_id = kwargs.get('tweet_id')
-        # self.tweet_url = kwargs.get('tweet_url')
         self.source: int | str = kwargs.get('source')
         self.text_or_prompt: str | None = kwargs.get('text_or_prompt')
         self.generate: bool | None = kwargs.get('generate')
@@ -290,6 +282,8 @@ class TwitterInteraction(ABC):
         self.evm: bool | None = kwargs.get('evm_wallet')
         self.aptos: bool | None = kwargs.get('aptos_wallet')
         self.solana: bool | None = kwargs.get('solana_wallet')
+        self.bitcoin_segwit: bool | None = kwargs.get('bitcoin_segwit')
+        self.bitcoin_taproot: bool | None = kwargs.get('bitcoin_taproot')
 
     def __str__(self):
         return self.__class__.__name__
@@ -318,6 +312,23 @@ class TwitterInteraction(ABC):
         except Exception as e:
             logger.error(e)
 
+    async def get_text(self, ttm: TwitterTaskManager) -> str:
+        if self.generate:
+            text = self.generate_crypto_text(self.text_or_prompt, ttm.profile.proxy.proxy_string)
+        elif self.evm:
+            text = ttm.profile.evm_address
+        elif self.aptos:
+            text = ttm.profile.aptos_address
+        elif self.solana:
+            text = ttm.profile.solana_address
+        elif self.bitcoin_segwit:
+            text = ttm.profile.bitcoin_native_segwit_address
+        elif self.bitcoin_taproot:
+            text = ttm.profile.bitcoin_taproot_address
+        else:
+            text = self.text_or_prompt
+        return text
+
 
 class Tweet(TwitterInteraction, ABC):
     description: str = 'Введите текст (+картинку beta)'
@@ -325,17 +336,7 @@ class Tweet(TwitterInteraction, ABC):
     error: str = TwitterInteraction.error.replace('{action}', 'tweet')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        if self.generate:
-            text = self.generate_crypto_text(self.text_or_prompt, ttm.profile.proxy.proxy_string)
-        elif self.evm:
-            text = get_evm_address(ttm.profile)
-        elif self.aptos:
-            text = get_aptos_address(ttm.profile)
-        elif self.solana:
-            text = get_solana_address(ttm.profile)
-        else:
-            text = self.text_or_prompt
-        return await ttm.tweet(text)
+        return await ttm.tweet(await self.get_text(ttm))
 
     def __str__(self):
         return (
@@ -382,17 +383,7 @@ class Quote(TwitterInteraction, ABC):
     error: str = TwitterInteraction.error.replace('{action}', 'quote')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        if self.generate:
-            text = self.generate_crypto_text(self.text_or_prompt, ttm.profile.proxy.proxy_string)
-        elif self.evm:
-            text = get_evm_address(ttm.profile)
-        elif self.aptos:
-            text = get_aptos_address(ttm.profile)
-        elif self.solana:
-            text = get_solana_address(ttm.profile)
-        else:
-            text = self.text_or_prompt
-        return await ttm.quote(self.source, text, self.image)
+        return await ttm.quote(self.source, await self.get_text(ttm), self.image)
 
     def __str__(self):
         return (
@@ -412,19 +403,9 @@ class Reply(TwitterInteraction, ABC):
     error: str = TwitterInteraction.error.replace('{action}', 'reply')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        if self.generate:
-            text = self.generate_crypto_text(self.text_or_prompt, ttm.profile.proxy.proxy_string)
-        elif self.evm:
-            text = get_evm_address(ttm.profile)
-        elif self.aptos:
-            text = get_aptos_address(ttm.profile)
-        elif self.solana:
-            text = get_solana_address(ttm.profile)
-        else:
-            text = self.text_or_prompt
         return await ttm.reply(
             self.source.split('/')[-1] if self.source.startswith('http') else self.source,
-            text,
+            await self.get_text(ttm),
             self.image
         )
 

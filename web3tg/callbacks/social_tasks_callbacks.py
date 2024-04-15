@@ -3,17 +3,16 @@ import asyncio
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 from aiogram.fsm.context import FSMContext
-from web3db import Profile
 
-from main import bot
-from handlers.basic_commands import start as main_start
-from keyboards import fabrics
-from data import get_all_accounts_by_social, get_random_accounts_by_proxy
-from extra.tasks import process_tasks
-from extra.tw import Tweet, TwitterInteraction, Quote, Reply, twitter_actions, twitter_account_settings
-from utils import (
-    SocialTasks, show_social_tasks, edit_dialog_message, menu_buttons,
-    input_data_types_buttons, show_profiles_tasks, profiles_amount_type
+from web3tg.callbacks.main_callbacks import return_to_tasks
+from web3tg.main import bot
+from web3tg.keyboards import fabrics
+from web3tg.data import get_all_accounts_by_social, get_random_accounts_by_proxy
+from web3tg.extra.tasks import process_tasks
+from web3tg.extra.tw import Tweet, TwitterInteraction, Quote, Reply, twitter_actions, twitter_account_settings
+from web3tg.utils import (
+    SocialTasks, show_social_tasks, edit_dialog_message, menu_buttons, input_data_types_buttons, profiles_amount_type,
+    get_text_for_current_page_profiles
 )
 
 router = Router()
@@ -43,21 +42,6 @@ async def tasks_menu(
     await state.update_data(all_profiles=await get_all_accounts_by_social(social))
     await state.set_state(SocialTasks.CHOOSE_TASK)
     await show_social_tasks(call.message, social, state)
-
-
-@router.callback_query(fabrics.InlineCallbacks.filter(F.action == 'Таски'))
-@router.callback_query(SocialTasks.INPUT_PROFILES_IDS, fabrics.ProfilesPagination.filter(F.action == 'Таски'))
-async def return_to_tasks(
-        call: CallbackQuery,
-        callback_data: fabrics.InlineCallbacks | fabrics.ProfilesPagination,
-        state: FSMContext
-):
-    data = await state.get_data()
-    current_state = await state.get_state()
-    if 'SocialTasks' in current_state:
-        await show_social_tasks(call.message, data["social"], state)
-    else:
-        await show_profiles_tasks(call.message, state)
 
 
 @router.callback_query(SocialTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == 'Текущие'))
@@ -95,12 +79,6 @@ async def start_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallback
         await call.answer(f"{menu_buttons[callback_data.action]}")
     else:
         await call.answer(f"Таски или аккаунты пустые, скипаю...")
-
-
-@router.callback_query(fabrics.InlineCallbacks.filter(F.action == 'Меню'))
-async def return_to_main_menu(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext) -> None:
-    await state.clear()
-    await main_start(call.message, state)
 
 
 @router.callback_query(SocialTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == 'Tweet'))
@@ -189,7 +167,7 @@ async def input_data_text_type_choice(
 
 @router.callback_query(
     SocialTasks.CHOOSE_INPUT_DATA_TYPE,
-    fabrics.InlineCallbacks.filter(F.action.in_(['EVM', 'Aptos', 'Solana']))
+    fabrics.InlineCallbacks.filter(F.action.in_(['EVM', 'Aptos', 'Solana', 'Bitcoin (Segwit)', 'Bitcoin (Taproot)']))
 )
 async def input_data_wallet_type_choice(
         call: CallbackQuery,
@@ -206,19 +184,14 @@ async def input_data_wallet_type_choice(
             current_task.aptos = True
         case 'Solana':
             current_task.solana = True
+        case 'Bitcoin (Segwit)':
+            current_task.bitcoin_segwit = True
+        case 'Bitcoin (Taproot)':
+            current_task.bitcoin_taproot = True
     social_tasks: dict[TwitterInteraction: set] = data['social_tasks']
     social_tasks[current_task] = data.get('input_sources', set())
     await state.update_data(social_tasks=social_tasks)
     await return_to_tasks(call, callback_data, state)
-
-
-def get_text_for_current_page_profiles(profiles: list[Profile], page: int):
-    text = '<b>Введите id профилей</b>\n'
-    for profile_id, login, ready in profiles[page * 10:(page + 1) * 10]:  # type: Profile
-        line = f'{profile_id} | {login}'
-        line = f'<b><i>{line}</i></b>' if ready else line
-        text += line + '\n'
-    return text
 
 
 @router.callback_query(
@@ -246,30 +219,6 @@ async def get_profiles_ids_choice(
     text = get_text_for_current_page_profiles(data['all_profiles'], 0)
     await edit_dialog_message(message=call.message, text=text, reply_markup=fabrics.paginator())
     await state.set_state(SocialTasks.INPUT_PROFILES_IDS)
-
-
-@router.callback_query(SocialTasks.INPUT_PROFILES_IDS,
-                       fabrics.ProfilesPagination.filter(F.action.in_(['next', 'prev'])))
-async def profiles_pagination(
-        call: CallbackQuery,
-        callback_data: fabrics.ProfilesPagination,
-        state: FSMContext
-):
-    data = await state.get_data()
-    all_profiles = data['all_profiles']
-    page_num = int(callback_data.page)
-    page = page_num - 1 if page_num > 0 else 0
-
-    if callback_data.action == "next":
-        page = page_num + 1 if (page_num + 1) * 10 < len(all_profiles) else page_num
-
-    text = get_text_for_current_page_profiles(all_profiles, page)
-
-    await edit_dialog_message(
-        message=call.message,
-        text=text,
-        reply_markup=fabrics.paginator(page=page)
-    )
 
 
 @router.callback_query(

@@ -28,3 +28,8 @@ class ProfilesTasks(StatesGroup):
     START_CHANGE_PROFILES_MODEL = State()
 
     TWO_FACTOR = State()
+
+
+class ZoraState(StatesGroup):
+    GET_LINKS = State()
+    CHOOSE_CHAIN = State()

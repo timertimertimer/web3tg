@@ -3,8 +3,8 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from keyboards import *
-from utils import help_string, SocialTasks
+from web3tg.keyboards import *
+from web3tg.utils import help_string, SocialTasks
 
 router = Router()
 
@@ -23,5 +23,5 @@ async def start(message: Message, state: FSMContext) -> None:
         fn = message.answer
     await fn(
         f'<b>Choose</b>',
-        reply_markup=fabrics.get_inline_buttons(['Social tasks', 'Profiles'])
+        reply_markup=fabrics.get_inline_buttons(['Social tasks', 'Profiles', 'Zora'])
     )

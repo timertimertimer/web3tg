@@ -5,10 +5,15 @@ from dotenv import load_dotenv
 from web3db import DBHelper, Profile
 from web3db.core import ModelType
 
-from utils import models
+from .other import models
 
 load_dotenv()
 db = DBHelper(os.getenv('CONNECTION_STRING'))
+
+__all__ = [
+    'get_models_with_2fa',
+    'ProfilesInteraction'
+]
 
 
 async def get_models_with_2fa(model: ModelType) -> list[ModelType]:

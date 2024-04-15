@@ -7,7 +7,7 @@ from aiogram.enums import ParseMode
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 
 from callbacks import social_tasks_callbacks, profiles_tasks_callbacks
-from extra.logger import InterceptHandler
+from utils.logger import InterceptHandler
 from handlers import basic_commands, user_commands
 from middlewares import CheckAdminMiddleware
 

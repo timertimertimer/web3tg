@@ -4,9 +4,8 @@ from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
-from extra.accounts import ProfilesInteraction
-from keyboards import fabrics
-from utils import ProfilesTasks, edit_dialog_message, show_profiles_tasks
+from web3tg.keyboards import fabrics
+from web3tg.utils import ProfilesTasks, edit_dialog_message, show_profiles_tasks, ProfilesInteraction
 
 if TYPE_CHECKING:
     from web3db import Profile
@@ -15,7 +14,7 @@ router = Router()
 
 
 @router.callback_query(fabrics.InlineCallbacks.filter(F.action == 'Profiles'))
-async def database_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
+async def profiles_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     await show_profiles_tasks(call.message, state)
 
 

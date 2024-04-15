@@ -12,6 +12,9 @@ from data import add_social_to_db
 from extra.tw import Quote, Reply, TwitterInteraction
 from utils import SocialTasks, edit_dialog_message, show_social_tasks, input_data_types_buttons, ProfilesTasks
 
+from web3tg.keyboards import fabrics
+from web3tg.utils import ZoraState, CHAINS
+
 load_dotenv()
 
 router = Router()
@@ -111,3 +114,18 @@ async def profiles_ids_handler(message: Message, state: FSMContext):
             data['dialog_message'],
             f'<b>Profiles. Change social. {social}</b>\nНеверно. Введите id профилей еще раз'
         )
+
+
+@router.message(ZoraState.GET_LINKS)
+async def get_links(message: Message, state: FSMContext):
+    links = {}
+    for line in message.text.split('\n'):
+        link, amount = line.split()
+        amount = int(amount) if amount.isdigit() else 1
+        links[link] = amount
+    await state.update_data(links=links)
+    chains = {chain.name: False for chain in CHAINS}
+    await state.update_data(chains=chains)
+    await message.answer(
+        'Choose chain', reply_markup=fabrics.get_chain_choice_buttons(chains, ['Reset', 'Next'])
+    )

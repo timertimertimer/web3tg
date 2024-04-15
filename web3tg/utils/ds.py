@@ -11,8 +11,8 @@ from aiohttp_proxy import ProxyConnector
 from web3db.core import DBHelper
 from web3db.models import Profile
 
-from extra.logger import logger
-from extra.capmonster import solve_captcha
+from logger import logger
+from capmonster import solve_captcha
 
 load_dotenv()
 

@@ -7,6 +7,10 @@ class InlineCallbacks(CallbackData, prefix='social'):
     action: str
 
 
+class ZoraCallbacks(CallbackData, prefix='zora'):
+    action: str
+
+
 class ProfilesPagination(CallbackData, prefix='pag'):
     action: str
     page: int = None
@@ -30,4 +34,21 @@ def paginator(page: int = 0):
             action='next', page=page).pack()),
         width=3
     )
+    return builder.as_markup()
+
+
+def get_chain_choice_buttons(buttons: dict, navigate: list[str]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    [
+        builder.button(text=f'{name} {f"[YES]" if chosen else f"[NO]"}', callback_data=ZoraCallbacks(action=name))
+        for name, chosen in buttons.items()
+    ] + [builder.button(text=text, callback_data=ZoraCallbacks(action=text)) for text in navigate]
+    builder.adjust(len(buttons))
+    return builder.as_markup()
+
+
+def get_start_button() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text='Start', callback_data=ZoraCallbacks(action='Start'))
+    builder.button(text='Reset', callback_data=ZoraCallbacks(action='Reset'))
     return builder.as_markup()

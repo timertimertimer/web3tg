@@ -6,8 +6,6 @@ from capmonstercloudclient.requests import HcaptchaProxylessRequest
 from http.client import HTTPException
 from discord import CaptchaRequired, Client
 
-from extra.logger import logger
-
 
 async def solve_captcha(cr: CaptchaRequired, client: Client):
     client_options = ClientOptions(api_key=os.getenv('CAPMONSTER_API_KEY'))
