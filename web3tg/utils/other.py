@@ -1,8 +1,9 @@
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, InlineKeyboardMarkup
 from web3db import *
+from web3mt.evm import Chain, Zora, Arbitrum, Optimism, Ethereum
 
-from web3tg.utils.tw import twitter_actions
+from .tw import twitter_actions
 from .states import SocialTasks, ProfilesTasks
 from web3tg.keyboards import fabrics
 
@@ -87,3 +88,5 @@ profiles_amount_type = [
 ]
 profiles_tasks_buttons = ['Change social', '2FA']
 models = {'Twitter': Twitter, 'Discord': Discord, 'Github': Github, 'Proxy': Proxy, 'Email': Email}
+
+CHAINS: list[Chain] = [Zora, Base, Arbitrum, Optimism, Ethereum]

@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from aiogram import Bot
 from web3db import DBHelper
 
-from extra.tw import TwitterTaskManager, TwitterInteraction, TwoFactor
-from extra.logger import logger
+from .tw import TwitterTaskManager, TwitterInteraction, TwoFactor
+from .logger import logger
 
 from web3db.models import Profile
 
@@ -54,6 +54,10 @@ async def process_tasks(
     for profile in profiles:
         tasks.append(asyncio.create_task(process_profile(profile)))
     await asyncio.gather(*tasks)
+
+__all__ = [
+    'process_tasks'
+]
 
 
 if __name__ == '__main__':

@@ -8,9 +8,11 @@ from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from data import add_social_to_db
-from extra.tw import Quote, Reply, TwitterInteraction
-from utils import SocialTasks, edit_dialog_message, show_social_tasks, input_data_types_buttons, ProfilesTasks
+from web3tg.data import add_social_to_db
+from web3tg.utils import (
+    SocialTasks, edit_dialog_message, show_social_tasks, input_data_types_buttons, ProfilesTasks, Quote, Reply,
+    TwitterInteraction
+)
 
 from web3tg.keyboards import fabrics
 from web3tg.utils import ZoraState, CHAINS

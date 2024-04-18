@@ -10,10 +10,10 @@ from random import uniform
 from dotenv import load_dotenv
 from twitter import Client, Account
 from twitter.errors import HTTPException, Unauthorized, BadToken
-from twitter.models import UserData
+from twitter.models import User
 from web3db import DBHelper
-
 from web3db.models import Profile
+
 from .windows import set_windows_event_loop_policy
 from .logger import logger
 
@@ -88,11 +88,11 @@ class TwitterTaskManager:
             logger.error(log)
         return log
 
-    async def get_user_data(self, username: str = None) -> UserData | str:
+    async def get_user_data(self, username: str = None) -> User | str:
         username = self.profile.twitter.login if not username else username
         username = username.split('/')[-1]
         try:
-            user_data = await self.client.request_user_data(username)
+            user_data = await self.client.request_user(username)
             if user_data:
                 log = (
                     f"{self.profile.id} | {TwitterInteraction.success.format(username=self.profile.twitter.login)}"
@@ -322,9 +322,9 @@ class TwitterInteraction(ABC):
         elif self.solana:
             text = ttm.profile.solana_address
         elif self.bitcoin_segwit:
-            text = ttm.profile.bitcoin_native_segwit_address
+            text = ttm.profile.btc_native_segwit_address
         elif self.bitcoin_taproot:
-            text = ttm.profile.bitcoin_taproot_address
+            text = ttm.profile.btc_taproot_address
         else:
             text = self.text_or_prompt
         return text
@@ -477,3 +477,10 @@ twitter_actions = {
     'Reply': Reply,
     'Settings': twitter_account_settings
 }
+
+__all__ = [
+    'TwitterTaskManager',
+    'TwitterInteraction', 'Tweet', 'Follow', 'Like', 'Repost', 'Quote', 'Reply',
+    'Unlock', 'ChangePassword', 'TwoFactor',
+    'twitter_account_settings', 'twitter_actions'
+]

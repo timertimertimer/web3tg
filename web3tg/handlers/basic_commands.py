@@ -23,5 +23,7 @@ async def start(message: Message, state: FSMContext) -> None:
         fn = message.answer
     await fn(
         f'<b>Choose</b>',
-        reply_markup=fabrics.get_inline_buttons(['Social tasks', 'Profiles', 'Zora'])
+        reply_markup=fabrics.get_inline_buttons(['Social tasks', 'Profiles',
+                                                 # 'Zora'
+                                                 ])
     )

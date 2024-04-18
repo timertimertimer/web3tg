@@ -8,11 +8,10 @@ from web3tg.callbacks.main_callbacks import return_to_tasks
 from web3tg.main import bot
 from web3tg.keyboards import fabrics
 from web3tg.data import get_all_accounts_by_social, get_random_accounts_by_proxy
-from web3tg.extra.tasks import process_tasks
-from web3tg.extra.tw import Tweet, TwitterInteraction, Quote, Reply, twitter_actions, twitter_account_settings
 from web3tg.utils import (
     SocialTasks, show_social_tasks, edit_dialog_message, menu_buttons, input_data_types_buttons, profiles_amount_type,
-    get_text_for_current_page_profiles
+    get_text_for_current_page_profiles, process_tasks, Tweet, TwitterInteraction, Quote, Reply, twitter_actions,
+    twitter_account_settings
 )
 
 router = Router()

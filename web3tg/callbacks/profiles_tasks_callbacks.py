@@ -104,10 +104,10 @@ async def start_change_profiles_model(call: CallbackQuery, callback_data: fabric
 @router.callback_query(ProfilesTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == '2FA'))
 async def two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     await state.set_state(ProfilesTasks.TWO_FACTOR)
-    await edit_dialog_message(call.message, '<b>Profiles. 2FA</b>\nChoose social', ['Twitter'])
+    await edit_dialog_message(call.message, '<b>Profiles. 2FA</b>\nChoose social', ['Twitter', 'Email'])
 
 
-@router.callback_query(ProfilesTasks.TWO_FACTOR, fabrics.InlineCallbacks.filter(F.action == 'Twitter'))
+@router.callback_query(ProfilesTasks.TWO_FACTOR, fabrics.InlineCallbacks.filter(F.action.in_(['Twitter', 'Email'])))
 async def twitter_two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     social = callback_data.action
     await state.update_data(social=social)

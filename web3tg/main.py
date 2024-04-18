@@ -6,7 +6,7 @@ from aiogram import Dispatcher, Bot
 from aiogram.enums import ParseMode
 from aiogram.utils.callback_answer import CallbackAnswerMiddleware
 
-from callbacks import social_tasks_callbacks, profiles_tasks_callbacks
+from callbacks import *
 from utils.logger import InterceptHandler
 from handlers import basic_commands, user_commands
 from middlewares import CheckAdminMiddleware
@@ -31,6 +31,7 @@ async def start_bot() -> None:
         basic_commands.router,
         user_commands.router,
 
+        main_callbacks.router,
         social_tasks_callbacks.router,
         profiles_tasks_callbacks.router
     )
