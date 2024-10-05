@@ -5,10 +5,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from web3tg.keyboards import fabrics
-from web3tg.utils import ProfilesTasks, edit_dialog_message, show_profiles_tasks, ProfilesInteraction
+from web3tg.utils import ProfilesTasks
+from web3tg.utils.bot_commands import show_profiles_tasks, edit_dialog_message
+from web3tg.utils.social_tasks import ProfilesInteraction
 
 if TYPE_CHECKING:
-    from web3db import Profile
+    from web3db import RemoteProfile
 
 router = Router()
 
@@ -18,13 +20,34 @@ async def profiles_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallb
     await show_profiles_tasks(call.message, state)
 
 
-@router.callback_query(ProfilesTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == 'Change social'))
-async def tasks_menu(
-        call: CallbackQuery,
-        callback_data: fabrics.InlineCallbacks,
-        state: FSMContext
-):
-    await state.set_state(ProfilesTasks.CHANGE_PROFILES_MODEL)
+@router.callback_query(ProfilesTasks.START_CHANGE_PROFILES_MODEL, fabrics.InlineCallbacks.filter(F.action == 'Запуск'))
+async def start_change_profiles_model(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
+    data = await state.get_data()
+    social = data['social']
+    profiles_ids = data['profiles_ids']
+    delete_model = data['delete_model']
+    delete_models_email = data['delete_models_email']
+    edited_model = await ProfilesInteraction.change_profile_model(
+        social=social,
+        delete_model=delete_model,
+        delete_models_email=delete_models_email,
+        profiles_ids=profiles_ids
+    )
+    if edited_model:
+        s = f'{social} профилей {profiles_ids} изменен'
+    else:
+        s = f'Не удалось изменить {social} профилей {profiles_ids}'
+    await call.message.answer(s)
+    await show_profiles_tasks(call.message, state)
+
+
+@router.callback_query(ProfilesTasks.CHOOSE_TASK,
+                       fabrics.InlineCallbacks.filter(F.action.in_(['Change social', 'Edit social'])))
+async def choose_social(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
+    if callback_data.action == 'Change social':
+        await state.set_state(ProfilesTasks.CHANGE_PROFILES_MODEL)
+    else:
+        await state.set_state(ProfilesTasks.EDIT_PROFILES_MODEL)
     await edit_dialog_message(
         call.message,
         '<b>Profiles. Change social</b>\nChoose social',
@@ -80,25 +103,12 @@ async def change_profiles_model_extra(call: CallbackQuery, callback_data: fabric
     )
 
 
-@router.callback_query(ProfilesTasks.START_CHANGE_PROFILES_MODEL, fabrics.InlineCallbacks.filter(F.action == 'Запуск'))
-async def start_change_profiles_model(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
-    data = await state.get_data()
-    social = data['social']
-    profiles_ids = data['profiles_ids']
-    delete_model = data['delete_model']
-    delete_models_email = data['delete_models_email']
-    edited_model = await ProfilesInteraction.change_profile_model(
-        social=social,
-        delete_model=delete_model,
-        delete_models_email=delete_models_email,
-        profiles_ids=profiles_ids
-    )
-    if edited_model:
-        s = f'{social} профилей {profiles_ids} изменен'
-    else:
-        s = f'Не удалось изменить {social} профилей {profiles_ids}'
-    await call.message.answer(s)
-    await show_profiles_tasks(call.message, state)
+@router.callback_query(
+    ProfilesTasks.EDIT_PROFILES_MODEL,
+    fabrics.InlineCallbacks.filter(F.action.in_(['Twitter', 'Discord', 'Github', 'Email']))
+)
+async def edit_profiles_model(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
+    ...
 
 
 @router.callback_query(ProfilesTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == '2FA'))
@@ -111,7 +121,7 @@ async def two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks
 async def twitter_two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     social = callback_data.action
     await state.update_data(social=social)
-    profiles: list[Profile] = await ProfilesInteraction.get_profiles_models_with_2fa(social)
+    profiles: list['RemoteProfile'] = await ProfilesInteraction.get_profiles_models_with_2fa(social)
     await state.update_data(profiles_with_totp=profiles)
     await edit_dialog_message(
         call.message,

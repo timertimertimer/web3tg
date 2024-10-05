@@ -1,4 +1,3 @@
-import os
 import re
 import ssl
 import email
@@ -9,9 +8,8 @@ from email.message import Message
 from collections import defaultdict
 from typing import Iterable, Callable, Optional
 
-from better_proxy import Proxy
-from web3db import DBHelper, Profile
-from aioimaplib import IMAP4_SSL, get_running_loop, IMAP4ClientProtocol
+from aiohttp_proxy import ProxyConnector
+from aioimaplib import IMAP4_SSL, get_running_loop, IMAP4ClientProtocol, Abort
 
 
 class ProxyIMAPClient(IMAP4_SSL):
@@ -29,7 +27,7 @@ class ProxyIMAPClient(IMAP4_SSL):
     async def create_socket_through_proxy(
             self, host, port,
     ) -> socket.socket:
-        proxy = Proxy.from_url(self.proxy)
+        proxy = ProxyConnector.from_url(self.proxy)
         return await proxy.connect(dest_host=host, dest_port=port)
 
     def create_client(self, host: str, port: int, loop: asyncio.AbstractEventLoop,
@@ -54,7 +52,10 @@ class ProxyIMAPClient(IMAP4_SSL):
     async def get_messages_from_folders(self, folders: Iterable[str], charset: str) -> dict[str: list[Message]]:
         messages = defaultdict(list)
         for folder in folders:
-            result, data = await self.select(folder)
+            try:
+                result, data = await self.select(folder)
+            except Abort as e:
+                pass
             if result != 'OK':
                 # print(f"Failed to select folder {folder}: {data}")
                 continue
@@ -111,22 +112,3 @@ __all__ = [
     'ProxyIMAPClient',
     'get_verify_location_link'
 ]
-
-
-async def main():
-    db = DBHelper(os.getenv('CONNECTION_STRING'))
-    profiles: list[Profile] = await db.get_rows_by_id([353], Profile)
-    for profile in profiles:
-        print(await get_message(
-            profile.twitter.email.login,
-            profile.twitter.email.password,
-            profile.proxy.proxy_string
-        ))
-
-
-if __name__ == '__main__':
-    from dotenv import load_dotenv
-
-    load_dotenv()
-    message = asyncio.run(main())
-    print(message)

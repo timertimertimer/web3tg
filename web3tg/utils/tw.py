@@ -1,28 +1,50 @@
 import asyncio
-import os
 import secrets
 import string
+from typing import Callable
+
 import g4f
-from abc import ABC, abstractmethod
+from abc import ABC
 from json import JSONDecodeError
 from pathlib import Path
 from random import uniform
-from dotenv import load_dotenv
 from twitter import Client, Account
-from twitter.errors import HTTPException, Unauthorized, BadToken
-from twitter.models import User
-from web3db import DBHelper
-from web3db.models import Profile
+from twitter.errors import HTTPException, Unauthorized, AccountSuspended, FailedToFindDuplicatePost
+from twitter.models import User, Tweet
+from web3db.models import RemoteProfile as Profile
+from web3mt.utils import sleep
 
+from .db import db
+from .env import Web3tgENV
 from .windows import set_windows_event_loop_policy
-from .logger import logger
+from .logger import my_logger
 
-load_dotenv()
 set_windows_event_loop_policy()
-
 dir_path = Path(__file__).resolve().parent
-db = DBHelper(os.getenv('CONNECTION_STRING'))
-capsolver_api_key = os.getenv('CAPSOLVER_API_KEY')
+
+__all__ = [
+    'TwitterTaskManager',
+    'TweetInteraction',
+    'UnlockAction', 'ChangePasswordAction', 'TwoFactorAction',
+    'TweetAction', 'FollowAction', 'LikeAction', 'RepostAction', 'QuoteAction', 'ReplyAction',
+    'twitter_account_settings', 'twitter_actions'
+]
+
+
+class Action(ABC):
+    name: str
+    description: str
+    success: str = '{username} | '
+    error: str = '{username} | Failed to {action} {source}'
+
+    def __init__(self, *args, **kwargs):
+        self.source: int | str = kwargs.get('source')
+
+    def __str__(self):
+        return self.__class__.__name__
+
+    def __repr__(self):
+        return self.__str__()
 
 
 class TwitterTaskManager:
@@ -34,15 +56,16 @@ class TwitterTaskManager:
                 ct0=None,
                 id=None,
                 name=None,
-                username=None,
+                username=profile.twitter.login,
                 password=profile.twitter.password,
-                email=None,
-                totp_secret=None,
-                backup_code=None
+                email=profile.twitter.email.login if profile.twitter.email else None,
+                totp_secret=profile.twitter.totp_secret if profile.twitter.totp_secret else None,
+                backup_code=profile.twitter.backup_code if profile.twitter.backup_code else None
             ),
-            capsolver_api_key=capsolver_api_key,
+            capsolver_api_key=Web3tgENV.CAPSOLVER_API_KEY,
             proxy=profile.proxy.proxy_string,
             verify=False,
+            impersonate=False
         )
         self.profile = profile
 
@@ -61,65 +84,93 @@ class TwitterTaskManager:
             self.profile.twitter.auth_token = self.client.account.auth_token
             await db.edit(self.profile)
 
+    async def call_func(self, func: Callable, error_log: str, *args, **kwargs):
+        while True:
+            try:
+                response = await func(*args, **kwargs)
+                return response
+            except (HTTPException, Unauthorized) as e:
+                if not (
+                        e.response.status_code == 200
+                        and (226 in e.api_codes or 344 in e.api_codes)
+                ):
+                    if 366 in e.api_codes:
+                        e = 'Need to verify email'
+                    my_logger.error(f'{error_log}. {e}')
+                    return
+                await sleep(5, 10)
+            except AccountSuspended as e:
+                my_logger.error(f'{error_log}. {e}')
+                return
+            except KeyError as e:
+                if e.args != ('result',):  # if false - Authorization: Status is a duplicate. (187)
+                    raise
+
     async def tweet(self, text: str, image: bytes = None) -> str:
         # TODO: обработку картинок
-        try:
-            tweet_id = await self.client.tweet(text)
-            log = f'{self.profile.id} | {Tweet.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
-            logger.success(log)
-        except (HTTPException, Unauthorized, BadToken) as e:
-            log = f'{self.profile.id} | {Tweet.error.format(username=self.profile.twitter.login, e=e)}'
-            logger.error(log)
+        tweet: Tweet = await self.call_func(
+            self.client.tweet,
+            f'{self.profile.id} | {TweetAction.error.format(username=self.profile.twitter.login, source=text)}',
+            text
+        )
+        log = f'{self.profile.id} | {TweetAction.success.format(username=self.profile.twitter.login, tweet_id=tweet.id)}'
+        my_logger.success(log)
         return log
 
-    async def reply(self, tweet_id: int, text: str, image: bytes = None) -> str:
+    async def reply(self, tweet_id: int, text: str, image: bytes = None) -> str | None:
         try:
-            new_tweet_id = await self.client.reply(tweet_id, text)
+            tweet: Tweet = await self.call_func(
+                self.client.reply,
+                f"{self.profile.id} | {ReplyAction.error.format(username=self.profile.twitter.login, source=tweet_id)}",
+                tweet_id, text
+            )
+        except FailedToFindDuplicatePost as e:
             log = (
                 f"{self.profile.id} | "
-                f"{Reply.success.format(username=self.profile.twitter.login, tweet_id=tweet_id, new_tweet_id=new_tweet_id)}"
+                f"{ReplyAction.success.format(username=self.profile.twitter.login, tweet_id=tweet_id, new_tweet_id=f'Already replied tweet  with text: {text}')}"
             )
-            logger.success(log)
-        except (HTTPException, Unauthorized) as e:
+        else:
+            if not tweet:
+                return
             log = (
                 f"{self.profile.id} | "
-                f"{Reply.error.format(username=self.profile.twitter.login, source=tweet_id, e=e)}"
+                f"{ReplyAction.success.format(username=self.profile.twitter.login, tweet_id=tweet_id, new_tweet_id=tweet.id)}"
             )
-            logger.error(log)
+        my_logger.success(log)
         return log
 
     async def get_user_data(self, username: str = None) -> User | str:
         username = self.profile.twitter.login if not username else username
         username = username.split('/')[-1]
         try:
-            user_data = await self.client.request_user(username)
+            user_data = await self.call_func(
+                self.client.request_user_by_username,
+                (
+                    f"{self.profile.id} | "
+                    f"{TweetInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username)}"
+                ),
+                username
+            )
             if user_data:
                 log = (
-                    f"{self.profile.id} | {TwitterInteraction.success.format(username=self.profile.twitter.login)}"
+                    f"{self.profile.id} | {TweetInteraction.success.format(username=self.profile.twitter.login)}. "
                     f"Got user data from {username} with {user_data.followers_count} followers"
                 )
-                logger.success(log)
+                my_logger.success(log)
                 return user_data
             else:
-                error_message = 'User {username} is suspended or doesn\'t exist'
                 log = (
                     f"{self.profile.id} | "
-                    f"{TwitterInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username, e=error_message)}"
+                    f"{TweetInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username)}. User {username} is suspended or doesn\'t exist"
                 )
-                logger.error(log)
-        except (HTTPException, Unauthorized) as e:
-            log = (
-                f"{self.profile.id} | "
-                f"{TwitterInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username, e=e)}"
-            )
-            logger.error(log)
+                my_logger.error(log)
         except JSONDecodeError:
             delay = 60 * 10
             log = (
                 f'{self.profile.id} | '
-                f"{TwitterInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username, e=f'Got rate limit. Sleeping for {delay} seconds...')}"
+                f"{TweetInteraction.error.format(username=self.profile.twitter.login, action='get user data from', source=username)}. {f'Got rate limit. Sleeping for {delay} seconds...'}"
             )
-            logger.error(log)
+            my_logger.error(log)
             await asyncio.sleep(60 * 10)
         return log
 
@@ -130,152 +181,126 @@ class TwitterTaskManager:
         if isinstance(user_data, str):
             return user_data
         await asyncio.sleep(uniform(3, 5))
-        try:
-            result = await self.client.follow(user_data.id)
-            if result:
-                log = (
-                    f"{self.profile.id} | "
-                    f"{Follow.success.format(username=self.profile.twitter.login, following_username=username)}"
-                )
-                logger.success(log)
-            else:
-                log = (
-                    f"{self.profile.id} | "
-                    f"{Follow.error.format(username=self.profile.twitter.login, source=username, e=f'Something wrong happened with following {username} - {result}')}"
-                )
-                logger.error(log)
-        except (HTTPException, Unauthorized) as e:
+        result = await self.call_func(
+            self.client.follow,
+            f"{self.profile.id} | {FollowAction.error.format(username=self.profile.twitter.login, source=username)}",
+            user_data.id
+        )
+        if result:
             log = (
                 f"{self.profile.id} | "
-                f"{Follow.error.format(username=self.profile.twitter.login, source=username, e=e)}"
+                f"{FollowAction.success.format(username=self.profile.twitter.login, following_username=username)}"
             )
-            logger.error(log)
+            my_logger.success(log)
+        else:
+            log = (
+                f"{self.profile.id} | "
+                f"{FollowAction.error.format(username=self.profile.twitter.login, source=username)}. {f'Something wrong happened with following {username} - {result}'}"
+            )
+            my_logger.error(log)
         return log
 
     async def like(self, tweet_id: int) -> str:
-        try:
-            result = await self.client.like(tweet_id)
-            if result:
-                log = (
-                    f'{self.profile.id} | '
-                    f'{Like.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
-                )
-                logger.success(log)
-            else:
-                log = (
-                    f"{self.profile.id} | "
-                    f"{Like.error.format(username=self.profile.twitter.login, source=tweet_id, e=f'Something wrong happened with {tweet_id} - {result}')}"
-                )
-                logger.error(log)
-        except (HTTPException, Unauthorized) as e:
+        result = await self.call_func(
+            self.client.like,
+            f"{self.profile.id} | {LikeAction.error.format(username=self.profile.twitter.login, source=tweet_id)}",
+            tweet_id
+        )
+        if result:
             log = (
-                f"{self.profile.id} | "
-                f"{Like.error.format(username=self.profile.twitter.login, source=tweet_id, e=e)}"
+                f'{self.profile.id} | {LikeAction.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
             )
-            logger.error(log)
-        return log
+            my_logger.success(log)
+            return log
 
     async def repost(self, tweet_id: int) -> str:
-        try:
-            result = await self.client.repost(tweet_id)
-            log = (
-                f'{self.profile.id} | '
-                f'{Repost.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
-            )
-            logger.success(log)
-        except (HTTPException, Unauthorized) as e:
-            log = (
-                f"{self.profile.id} | "
-                f"{Repost.error.format(username=self.profile.twitter.login, source=tweet_id, e=e)}"
-            )
-            logger.error(log)
+        error_log = f"{self.profile.id} | {RepostAction.error.format(username=self.profile.twitter.login, source=tweet_id)}"
+        tweet: Tweet = await self.call_func(self.client.repost, error_log, tweet_id)
+        log = (
+            f'{self.profile.id} | {RepostAction.success.format(username=self.profile.twitter.login, tweet_id=tweet_id)}'
+        )
+        my_logger.success(log)
         return log
 
     async def quote(self, tweet_url: str, text: str, image: bytes = None) -> str:
-        try:
-            result = await self.client.quote(tweet_url, text)
-            log = (
-                f'{self.profile.id} | '
-                f'{Quote.success.format(username=self.profile.twitter.login, tweet_url=tweet_url, result=result)}'
-            )
-            logger.success(log)
-        except (HTTPException, Unauthorized) as e:
-            log = (
-                f"{self.profile.id} | "
-                f"{Quote.error.format(username=self.profile.twitter.login, source=tweet_url, e=e)}"
-            )
-            logger.error(log)
+        result = await self.call_func(
+            self.client.quote,
+            f"{self.profile.id} | {QuoteAction.error.format(username=self.profile.twitter.login, source=tweet_url)}",
+            tweet_url, text
+        )
+        log = (
+            f'{self.profile.id} | '
+            f'{QuoteAction.success.format(username=self.profile.twitter.login, tweet_url=tweet_url, result=result)}'
+        )
+        my_logger.success(log)
         return log
 
     async def change_password(self) -> str:
         characters = string.ascii_letters + string.digits + string.punctuation
         password = ''.join(secrets.choice(characters) for _ in range(50))
-        try:
-            result = await self.client.change_password(password)
-        except (HTTPException, Unauthorized) as e:
+        result = await self.call_func(
+            self.client.change_password,
+            f"{self.profile.id} | {ChangePasswordAction.error.format(username=self.profile.twitter.login)}",
+            password
+        )
+        if result:
+            new_password = self.client.account.password
             log = (
-                f"{self.profile.id} | "
-                f"{ChangePassword.error.format(username=self.profile.twitter.login, e=e)}"
+                f'{self.profile.id} | '
+                f'{ChangePasswordAction.success.format(username=self.profile.twitter.login, password=self.profile.twitter.password, new_password=new_password, auth_token=self.client.account.auth_token)}'
             )
-            logger.error(log)
+            my_logger.success(log)
+            self.profile.twitter.auth_token = self.client.account.auth_token
+            self.profile.twitter.password = new_password
+            await db.edit(self.profile)
         else:
-            if result:
-                new_password = self.client.account.password
-                log = (
-                    f'{self.profile.id} | '
-                    f'{ChangePassword.success.format(username=self.profile.twitter.login, password=self.profile.twitter.password, new_password=new_password, auth_token=self.client.account.auth_token)}'
-                )
-                logger.success(log)
-                self.profile.twitter.auth_token = self.client.account.auth_token
-                self.profile.twitter.password = new_password
-                await db.edit(self.profile)
-            else:
-                log = (
-                    f"{self.profile.id} | "
-                    f"{ChangePassword.error.format(username=self.profile.twitter.login, e='')}"
-                )
-                logger.error(log)
+            log = f"{self.profile.id} | {ChangePasswordAction.error.format(username=self.profile.twitter.login)}"
+            my_logger.error(log)
         return log
 
     async def add_2fa(self) -> str:
-        try:
-            if await self.client.totp_is_enabled():
-                log = (
-                    f"{self.profile.id} | "
-                    f"{TwoFactor.already_added.format(username=self.profile.twitter.login)}"
-                )
-                logger.debug(log)
-            else:
-                await self.client.enable_totp()
-                totp_secret = self.client.account.totp_secret
-                backup_code = self.client.account.backup_code
-                self.profile.twitter.totp_secret = totp_secret
-                self.profile.twitter.backup_code = backup_code
-                await db.edit(self.profile.twitter)
-                log = (
-                    f"{self.profile.id} | "
-                    f"{TwoFactor.success.format(username=self.profile.twitter.login, totp_secret=totp_secret, backup_code=backup_code)}"
-                )
-                logger.success(log)
-        except (HTTPException, Unauthorized) as e:
-            print(e.api_codes)
-            if 366 in e.api_codes:
-                e = 'Need to verify email'
+        totp_is_enabled = await self.call_func(
+            self.client.totp_is_enabled,
+            (
+                f"{self.profile.id} | "
+                f"{TwoFactorAction.error.format(username=self.profile.twitter.login)}"
+            )
+        )
+        if totp_is_enabled:
+            log = f"{self.profile.id} | {TwoFactorAction.already_added.format(username=self.profile.twitter.login)}"
+            my_logger.debug(log)
+        else:
+            await self.client.enable_totp()
+            totp_secret = self.client.account.totp_secret
+            backup_code = self.client.account.backup_code
+            self.profile.twitter.totp_secret = totp_secret
+            self.profile.twitter.backup_code = backup_code
+            await db.edit(self.profile.twitter)
             log = (
                 f"{self.profile.id} | "
-                f"{TwoFactor.error.format(username=self.profile.twitter.login, e=e)}"
+                f"{TwoFactorAction.success.format(username=self.profile.twitter.login, totp_secret=totp_secret, backup_code=backup_code)}"
             )
-            logger.error(log)
+            my_logger.success(log)
         return log
 
 
-class TwitterInteraction(ABC):
-    description: str
-    success: str = '{username} | '
-    error: str = '{username} | Failed to {action} {source}. {e}'
+class ActionWithSource(Action, ABC):
+    async def start(self, ttm: TwitterTaskManager):
+        pass
 
+
+class ActionWithoutSource(Action, ABC):
+    def __new__(cls):
+        raise NotImplementedError(f"Экземпляры класса {cls.name} не могут быть созданы")
+
+    @staticmethod
+    async def start(ttm: TwitterTaskManager):
+        pass
+
+
+class TweetInteraction(ActionWithSource, ABC):
     def __init__(self, *args, **kwargs):
-        self.source: int | str = kwargs.get('source')
+        super().__init__(*args, **kwargs)
         self.text_or_prompt: str | None = kwargs.get('text_or_prompt')
         self.generate: bool | None = kwargs.get('generate')
         self.image: bytes | None = kwargs.get('image')
@@ -284,16 +309,6 @@ class TwitterInteraction(ABC):
         self.solana: bool | None = kwargs.get('solana_wallet')
         self.bitcoin_segwit: bool | None = kwargs.get('bitcoin_segwit')
         self.bitcoin_taproot: bool | None = kwargs.get('bitcoin_taproot')
-
-    def __str__(self):
-        return self.__class__.__name__
-
-    def __repr__(self):
-        return self.__str__()
-
-    @abstractmethod
-    async def start(self, ttm: TwitterTaskManager):
-        pass
 
     @staticmethod
     async def generate_crypto_text(user_prompt: str, proxy: str) -> str:
@@ -310,7 +325,7 @@ class TwitterInteraction(ABC):
             )
             return response
         except Exception as e:
-            logger.error(e)
+            my_logger.error(e)
 
     async def get_text(self, ttm: TwitterTaskManager) -> str:
         if self.generate:
@@ -330,10 +345,11 @@ class TwitterInteraction(ABC):
         return text
 
 
-class Tweet(TwitterInteraction, ABC):
+class TweetAction(TweetInteraction, ABC):
+    name: str = 'Tweet'
     description: str = 'Введите текст (+картинку beta)'
-    success: str = TwitterInteraction.success + 'Tweeted {tweet_id}'
-    error: str = TwitterInteraction.error.replace('{action}', 'tweet')
+    success: str = TweetInteraction.success + 'Tweeted {tweet_id}'
+    error: str = TweetInteraction.error.replace('{action}', 'tweet')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
         return await ttm.tweet(await self.get_text(ttm))
@@ -350,37 +366,41 @@ class Tweet(TwitterInteraction, ABC):
         )
 
 
-class Follow(TwitterInteraction, ABC):
+class FollowAction(ActionWithSource, ABC):
+    name: str = 'Follow'
     description: str = 'Введите логины'
-    success: str = TwitterInteraction.success + 'Followed {following_username}'
-    error: str = TwitterInteraction.error.replace('{action}', 'follow')
+    success: str = ActionWithSource.success + 'Followed {following_username}'
+    error: str = ActionWithSource.error.replace('{action}', 'follow')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
         return await ttm.follow_by_username(self.source)
 
 
-class Like(TwitterInteraction, ABC):
+class LikeAction(TweetInteraction, ABC):
+    name: str = 'Like'
     description: str = 'Введите id постов'
-    success: str = TwitterInteraction.success + 'Liked {tweet_id}'
-    error: str = TwitterInteraction.error.replace('{action}', 'like')
+    success: str = TweetInteraction.success + 'Liked {tweet_id}'
+    error: str = TweetInteraction.error.replace('{action}', 'like')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        return await ttm.like(self.source)
+        return await ttm.like(int(self.source))
 
 
-class Repost(TwitterInteraction, ABC):
+class RepostAction(TweetInteraction, ABC):
+    name: str = 'Repost'
     description: str = 'Введите id постов'
-    success: str = TwitterInteraction.success + 'Reposted {tweet_id}'
-    error: str = TwitterInteraction.error.replace('{action}', 'repost')
+    success: str = TweetInteraction.success + 'Reposted {tweet_id}'
+    error: str = TweetInteraction.error.replace('{action}', 'repost')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        return await ttm.repost(self.source)
+        return await ttm.repost(int(self.source))
 
 
-class Quote(TwitterInteraction, ABC):
+class QuoteAction(TweetInteraction, ABC):
+    name: str = 'Quote'
     description: list[str] = ['Введите ссылки на посты', 'Введите текст (+картинку beta)']
-    success: str = TwitterInteraction.success + 'Quoted {tweet_url}, tweet ID: {result}'
-    error: str = TwitterInteraction.error.replace('{action}', 'quote')
+    success: str = TweetInteraction.success + 'Quoted {tweet_url}, tweet ID: {result}'
+    error: str = TweetInteraction.error.replace('{action}', 'quote')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
         return await ttm.quote(self.source, await self.get_text(ttm), self.image)
@@ -388,7 +408,7 @@ class Quote(TwitterInteraction, ABC):
     def __str__(self):
         return (
                 super().__str__() +
-                f'({self.text_or_prompt[:6]}, '
+                f'({self.text_or_prompt[:6]}{"..." if len(self.text_or_prompt) > 6 else ""}, '
                 f'{f"generate=True, " if self.generate else ""}'
                 f'{f"evm=True, " if self.evm else ""}'
                 f'{f"aptos=True, " if self.aptos else ""}'
@@ -397,17 +417,19 @@ class Quote(TwitterInteraction, ABC):
         )
 
 
-class Reply(TwitterInteraction, ABC):
+class ReplyAction(TweetInteraction, ABC):
+    name: str = 'Reply'
     description: list[str] = ['Вставьте id постов', 'Введите текст (+картинку beta)']
-    success: str = TwitterInteraction.success + 'Replied {tweet_id}, reply id: {new_tweet_id}'
-    error: str = TwitterInteraction.error.replace('{action}', 'reply')
+    success: str = TweetInteraction.success + 'Replied {tweet_id}, reply id: {new_tweet_id}'
+    error: str = TweetInteraction.error.replace('{action}', 'reply')
 
     async def start(self, ttm: TwitterTaskManager) -> str:
-        return await ttm.reply(
-            self.source.split('/')[-1] if self.source.startswith('http') else self.source,
-            await self.get_text(ttm),
-            self.image
-        )
+        if isinstance(self.source, str):
+            if self.source.startswith('http'):
+                source = int(self.source.split('/')[-1])
+            else:
+                source = int(self.source)
+        return await ttm.reply(self.source, await self.get_text(ttm), self.image)
 
     def __str__(self):
         return (
@@ -421,13 +443,10 @@ class Reply(TwitterInteraction, ABC):
         )
 
 
-class Unlock:
-    label: str = 'Change password'
-    success: str = TwitterInteraction.success + 'Unlocked'
+class UnlockAction(ActionWithoutSource, ABC):
+    name: str = 'Unlock'
+    success: str = Action.success + 'Unlocked'
     error: str = '{username} | Failed to unlock account. {e} '
-
-    def __new__(cls):
-        raise NotImplementedError("Экземпляры класса Unlock не могут быть созданы")
 
     @staticmethod
     async def start(ttm: TwitterTaskManager) -> str:
@@ -436,27 +455,21 @@ class Unlock:
         return f'{ttm.profile.id} | Account status - {ttm.client.account.status}'
 
 
-class ChangePassword:
-    label: str = 'Change password'
-    success: str = TwitterInteraction.success + 'Changed password {password} to {new_password}. New auth token - {auth_token}'
+class ChangePasswordAction(ActionWithoutSource, ABC):
+    name: str = 'Change password'
+    success: str = Action.success + 'Changed password {password} to {new_password}. New auth token - {auth_token}'
     error: str = '{username} | Failed to change password. {e} '
-
-    def __new__(cls):
-        raise NotImplementedError("Экземпляры класса ChangePassword не могут быть созданы")
 
     @staticmethod
     async def start(ttm: TwitterTaskManager) -> str:
         return await ttm.change_password()
 
 
-class TwoFactor:
+class TwoFactorAction(ActionWithoutSource, ABC):
     label: str = 'Add 2FA'
-    success: str = TwitterInteraction.success + 'Added 2FA. 2FA key - {totp_secret}, backup code - {backup_code}'
+    success: str = Action.success + 'Added 2FA. 2FA key - {totp_secret}, backup code - {backup_code}'
     error: str = '{username} | Failed to add 2FA. {e}'
     already_added: str = '{username} | 2FA already added'
-
-    def __new__(cls):
-        raise NotImplementedError("Экземпляры класса TwoFactor не могут быть созданы")
 
     @staticmethod
     async def start(ttm: TwitterTaskManager):
@@ -464,23 +477,16 @@ class TwoFactor:
 
 
 twitter_account_settings = {
-    'Change password': ChangePassword,
-    'Add 2FA': TwoFactor,
-    'Unlock': Unlock,
+    'Change password': ChangePasswordAction,
+    'Add 2FA': TwoFactorAction,
+    'Unlock': UnlockAction,
 }
 twitter_actions = {
-    'Tweet': Tweet,
-    'Like': Like,
-    'Follow': Follow,
-    'Repost': Repost,
-    'Quote': Quote,
-    'Reply': Reply,
+    'Tweet': TweetAction,
+    'Like': LikeAction,
+    'Follow': FollowAction,
+    'Repost': RepostAction,
+    'Quote': QuoteAction,
+    'Reply': ReplyAction,
     'Settings': twitter_account_settings
 }
-
-__all__ = [
-    'TwitterTaskManager',
-    'TwitterInteraction', 'Tweet', 'Follow', 'Like', 'Repost', 'Quote', 'Reply',
-    'Unlock', 'ChangePassword', 'TwoFactor',
-    'twitter_account_settings', 'twitter_actions'
-]

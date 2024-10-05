@@ -9,7 +9,6 @@ class SocialTasks(StatesGroup):
     CHOOSE_ACCOUNTS = State()
     CHOOSE_INPUT_DATA_TYPE = State()
 
-    INPUT_PROFILES_IDS = State()
     INPUT_SOURCES = State()
     INPUT_DATA = State()
     PROCESS_FILE = State()
@@ -21,13 +20,21 @@ class ProfilesTasks(StatesGroup):
     CHOOSE_TASK = State()
 
     CHANGE_PROFILES_MODEL = State()
-    CHANGE_PROFILES_MODEL_EXTRA = State()
-
     INPUT_PROFILES_IDS_TO_CHANGE_MODEL = State()
-
     START_CHANGE_PROFILES_MODEL = State()
 
+    EDIT_PROFILES_MODEL = State()
+
     TWO_FACTOR = State()
+
+
+class OnchainTasks(StatesGroup):
+    CHOOSE_TASK = State()
+
+    TRANSFER_SOURCE = State()
+    TRANSFER_DESTINATION = State()
+
+    CHOOSE_STATS = State()
 
 
 class ZoraState(StatesGroup):

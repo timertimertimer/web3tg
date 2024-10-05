@@ -9,10 +9,11 @@ from web3tg.main import bot
 from web3tg.keyboards import fabrics
 from web3tg.data import get_all_accounts_by_social, get_random_accounts_by_proxy
 from web3tg.utils import (
-    SocialTasks, show_social_tasks, edit_dialog_message, menu_buttons, input_data_types_buttons, profiles_amount_type,
-    get_text_for_current_page_profiles, process_tasks, Tweet, TwitterInteraction, Quote, Reply, twitter_actions,
+    SocialTasks, socials_menu_buttons, input_data_types_buttons_for_twitter, profiles_amount_type,
+    process_social_tasks, TweetAction, TweetInteraction, QuoteAction, ReplyAction, twitter_actions,
     twitter_account_settings
 )
+from web3tg.utils.bot_commands import edit_dialog_message, show_social_tasks
 
 router = Router()
 
@@ -47,7 +48,7 @@ async def tasks_menu(
 async def show_current_state(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     data = await state.get_data()
     text = (
-            f'<b>{menu_buttons[callback_data.action]}</b>\n'
+            f'<b>{socials_menu_buttons[callback_data.action]}</b>\n'
             f'<b>Профили:</b>\n{data["profiles_ids"] or ""}\n<b>Таски:</b>\n'
             + '\n'.join([f'{i}. {getattr(task, "label", task)} {sources or ""}'
                          for i, (task, sources) in enumerate(data['social_tasks'].items(), 1)])
@@ -62,7 +63,7 @@ async def show_current_state(call: CallbackQuery, callback_data: fabrics.InlineC
 async def clear_current_state(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     await state.update_data(social_tasks=dict())
     await state.update_data(profiles_ids=set())
-    await call.answer(f"{menu_buttons[callback_data.action]}")
+    await call.answer(f"{socials_menu_buttons[callback_data.action]}")
 
 
 @router.callback_query(SocialTasks.CHOOSE_TASK, fabrics.InlineCallbacks.filter(F.action == 'Запуск'))
@@ -72,10 +73,10 @@ async def start_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallback
     social_tasks = data['social_tasks']
     profiles_ids = data['profiles_ids']
     if social_tasks and profiles_ids:
-        asyncio.create_task(process_tasks(social, social_tasks, profiles_ids, bot, call.message.chat.id))
+        asyncio.create_task(process_social_tasks(social, social_tasks, profiles_ids, bot, call.message.chat.id))
         await state.update_data(social_tasks=dict())
         await state.update_data(profiles_ids=set())
-        await call.answer(f"{menu_buttons[callback_data.action]}")
+        await call.answer(f"{socials_menu_buttons[callback_data.action]}")
     else:
         await call.answer(f"Таски или аккаунты пустые, скипаю...")
 
@@ -87,10 +88,10 @@ async def tweet_task(
         state: FSMContext
 ):
     data = await state.get_data()
-    await state.update_data(current_task=Tweet())
+    await state.update_data(current_task=TweetAction())
     s = (f'<b>{data["social"]} Tweet</b>\n' +
-         '\n'.join([f'{i + 1}. {text}' for i, text in enumerate(input_data_types_buttons.values())]))
-    await edit_dialog_message(call.message, s, list(input_data_types_buttons.keys()))
+         '\n'.join([f'{i + 1}. {text}' for i, text in enumerate(input_data_types_buttons_for_twitter.values())]))
+    await edit_dialog_message(call.message, s, list(input_data_types_buttons_for_twitter.keys()))
     await state.set_state(SocialTasks.CHOOSE_INPUT_DATA_TYPE)
 
 
@@ -109,7 +110,7 @@ async def settings(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, 
 @router.callback_query(SocialTasks.SETTINGS, fabrics.InlineCallbacks.filter(F.action.in_(twitter_account_settings)))
 async def settings_tasks(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     data = await state.get_data()
-    social_tasks: dict[TwitterInteraction: set] = data['social_tasks']
+    social_tasks: dict[TweetInteraction: set] = data['social_tasks']
     social_tasks[twitter_account_settings[callback_data.action]] = None
     await call.answer(f'Задача {callback_data.action} добавлена в список задач')
     await show_social_tasks(call.message, data['social'], state)
@@ -125,10 +126,10 @@ async def not_tweet_task(
         state: FSMContext
 ):
     data = await state.get_data()
-    current_task: TwitterInteraction = twitter_actions[callback_data.action]()
+    current_task: TweetInteraction = twitter_actions[callback_data.action]()
     await state.update_data(current_task=current_task)
     description = current_task.description[0] if isinstance(current_task, (
-        Quote, Reply)) else current_task.description
+        QuoteAction, ReplyAction)) else current_task.description
     s = f'<b>{data["social"]} {str(current_task.__class__.__name__)}</b>\n{description}'
     await edit_dialog_message(call.message, s)
     await state.set_state(SocialTasks.INPUT_SOURCES)
@@ -144,17 +145,17 @@ async def input_data_text_type_choice(
         state: FSMContext
 ):
     data = await state.get_data()
-    current_task: TwitterInteraction = data['current_task']
+    current_task: TweetInteraction = data['current_task']
     current_task.generate = True
     input_data_type = callback_data.action
     if input_data_type == 'Любой по крипте':
         current_task.text_or_prompt = f'Любой'
-        social_tasks: dict[TwitterInteraction: set] = data['social_tasks']
+        social_tasks: dict[TweetInteraction: set] = data['social_tasks']
         social_tasks[current_task] = data.get('input_sources', set())
         await state.update_data(social_tasks=social_tasks)
         await return_to_tasks(call, callback_data, state)
     else:
-        if isinstance(current_task, (Quote, Reply)):
+        if isinstance(current_task, (QuoteAction, ReplyAction)):
             description = current_task.description[1]
         else:
             description = current_task.description
@@ -174,7 +175,7 @@ async def input_data_wallet_type_choice(
         state: FSMContext
 ) -> None:
     data = await state.get_data()
-    current_task: TwitterInteraction = data['current_task']
+    current_task: TweetInteraction = data['current_task']
     current_task.text_or_prompt = callback_data.action
     match callback_data.action:
         case 'EVM':
@@ -187,7 +188,7 @@ async def input_data_wallet_type_choice(
             current_task.bitcoin_segwit = True
         case 'Bitcoin (Taproot)':
             current_task.bitcoin_taproot = True
-    social_tasks: dict[TwitterInteraction: set] = data['social_tasks']
+    social_tasks: dict[TweetInteraction: set] = data['social_tasks']
     social_tasks[current_task] = data.get('input_sources', set())
     await state.update_data(social_tasks=social_tasks)
     await return_to_tasks(call, callback_data, state)
@@ -200,24 +201,10 @@ async def input_data_wallet_type_choice(
 async def show_accounts(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     await edit_dialog_message(
         call.message,
-        f'<b>{menu_buttons[callback_data.action]}</b>',
+        f'<b>{socials_menu_buttons[callback_data.action]}</b>',
         reply_markup=fabrics.get_inline_buttons(profiles_amount_type + ['Таски'], 1)
     )
     await state.set_state(SocialTasks.CHOOSE_ACCOUNTS)
-
-
-@router.callback_query(
-    SocialTasks.CHOOSE_ACCOUNTS,
-    fabrics.InlineCallbacks.filter(F.action == 'IDs')
-)
-async def get_profiles_ids_choice(
-        call: CallbackQuery,
-        state: FSMContext
-):
-    data = await state.get_data()
-    text = get_text_for_current_page_profiles(data['all_profiles'], 0)
-    await edit_dialog_message(message=call.message, text=text, reply_markup=fabrics.paginator())
-    await state.set_state(SocialTasks.INPUT_PROFILES_IDS)
 
 
 @router.callback_query(

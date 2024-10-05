@@ -1,10 +1,7 @@
-import os
-
-from web3db import DBHelper
+from web3tg.utils import db
 
 
 async def add_social_to_db(social_name: str, data: dict):
-    db = DBHelper(os.getenv('CONNECTION_STRING'))
     d = {
         'twitter': db.add_twitter,
         'discord': db.add_discord,

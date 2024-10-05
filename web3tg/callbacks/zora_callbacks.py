@@ -3,10 +3,12 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from web3tg.keyboards import fabrics
-from web3tg.utils import CHAINS, edit_dialog_message
+from web3tg.utils.bot_commands import edit_dialog_message
 from web3tg.utils.states import ZoraState
+from web3tg.utils.models import chains
 
 router = Router()
+
 
 @router.callback_query(fabrics.InlineCallbacks.filter(F.action == 'Zora'))
 async def zora(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
@@ -15,7 +17,8 @@ async def zora(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, stat
     )
     await state.set_state(ZoraState.GET_LINKS)
 
-@router.callback_query(ZoraState.CHOOSE_CHAIN, fabrics.InlineCallbacks.filter(F.action.in_(list(map(str, CHAINS)))))
+
+@router.callback_query(ZoraState.CHOOSE_CHAIN, fabrics.InlineCallbacks.filter(F.action.in_(list(map(str, chains)))))
 async def chains_callback(call: CallbackQuery, callback_data: fabrics.ZoraCallbacks, state: FSMContext):
     data = await state.get_data()
     chains = data['chains']
