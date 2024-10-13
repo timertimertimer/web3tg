@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "web3tg"
-version = "0.0.2"
+version = "0.0.4"
 description = "Private bot for interacting with socials and profiles from web3db"
 authors = ["timertimertimer <timerkhan2002@gmail.com>"]
 
@@ -8,8 +8,8 @@ authors = ["timertimertimer <timerkhan2002@gmail.com>"]
 python = "^3.11"
 g4f = "^0.2.9.9"
 loguru = "^0.7.2"
-web3db = "1.0.3"
-web3mt = "^0.0.1"
+web3db = "^1.0.5"
+web3mt = "^0.1.3"
 aiogram = "^3.4.1"
 tweepy-self = "^1.11.1"
 better-proxy = "^1.1.5"
