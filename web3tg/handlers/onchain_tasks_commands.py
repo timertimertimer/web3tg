@@ -2,7 +2,10 @@ from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 
-from web3tg.utils import OnchainTasks, chains, edit_dialog_message, get_onchain_transfer_info
+from web3tg.utils.states import OnchainTasks
+from web3tg.utils.models import chains
+from web3tg.utils.bot_commands import edit_dialog_message
+from web3tg.utils.onchain_tasks import get_onchain_transfer_info
 
 router = Router()
 

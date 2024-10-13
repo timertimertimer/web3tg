@@ -4,11 +4,10 @@ import pyotp
 from aiogram import Bot
 from web3db.models import RemoteProfile as Profile
 from web3db.core import ModelType
-from web3mt.onchain.evm.client import Client
 from web3tg.utils.tw import *
 from web3tg.utils.db import db
-from web3tg.utils.logger import logger
-from web3tg.utils.models import models, chains
+from web3tg.utils.logger import my_logger
+from web3tg.utils.models import models
 
 
 class ProfilesInteraction:
@@ -50,7 +49,7 @@ async def process_social_tasks(
                 if bot:
                     await bot.send_message(chat_id, result)
                 delay = random.uniform(10, 15)
-                logger.info(f'{current_profile.id} | Sleeping for {delay} seconds')
+                my_logger.info(f'{current_profile.id} | Sleeping for {delay} seconds')
                 await asyncio.sleep(delay)
             else:  # With sources
                 for source in random.sample(list(social_tasks[task]), len(social_tasks[task])):
@@ -59,11 +58,11 @@ async def process_social_tasks(
                     if bot:
                         await bot.send_message(chat_id, result)
                     delay = random.uniform(10, 15)
-                    logger.info(f'{current_profile.id} | Sleeping for {delay} seconds')
+                    my_logger.info(f'{current_profile.id} | Sleeping for {delay} seconds')
                     await asyncio.sleep(delay)
 
         info_message = f'{current_profile.id} | {social} tasks completed'
-        logger.success(info_message)
+        my_logger.success(info_message)
         if bot:
             await bot.send_message(chat_id, info_message)
 
@@ -73,7 +72,7 @@ async def process_social_tasks(
         tasks.append(asyncio.create_task(process_profile(profile)))
     await asyncio.gather(*tasks)
     info_message = f'All {social} tasks completed'
-    logger.success(info_message)
+    my_logger.success(info_message)
     if bot:
         await bot.send_message(chat_id, info_message)
 

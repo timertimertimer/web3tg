@@ -3,8 +3,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 
 from web3tg.keyboards import fabrics
-from web3tg.utils import OnchainTasks, get_onchain_transfer_info, show_onchain_tasks, edit_dialog_message
+from web3tg.utils.states import OnchainTasks
 from web3tg.utils.models import chains
+from web3tg.utils.bot_commands import edit_dialog_message, show_onchain_tasks
+from web3tg.utils.onchain_tasks import get_onchain_transfer_info
 
 router = Router()
 
