@@ -17,7 +17,7 @@ from web3tg.utils.logger import InterceptHandler
 bot = Bot(Web3tgENV.BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 
-async def start_bot() -> None:
+async def main() -> None:
     dp = Dispatcher()
 
     await bot.delete_webhook(drop_pending_updates=True)
@@ -45,5 +45,9 @@ async def start_bot() -> None:
     await dp.start_polling(bot)
 
 
+def run():
+    asyncio.run(main())
+
+
 if __name__ == "__main__":
-    asyncio.run(start_bot())
+    run()

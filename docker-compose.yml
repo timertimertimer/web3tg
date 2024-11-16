@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: web3tg
+    restart: always
+    volumes:
+      - .:/app  # Для локальной разработки, монтируем код
+    environment:
+      - BOT_TOKEN=your-bot-token # Замените на ваш токен
+    command: poetry run python my_app/main.py
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
