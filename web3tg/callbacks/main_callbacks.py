@@ -34,8 +34,8 @@ async def return_to_tasks(
         await show_onchain_tasks(call.message, state)
 
 
-@router.callback_query(SocialTasks. CHOOSE_ACCOUNTS, fabrics.InlineCallbacks.filter(F.action == 'IDs'))
-@router.callback_query(SocialTasks.CHOOSE_ACCOUNTS, fabrics.InlineCallbacks.filter(F.action.in_(['next', 'prev'])))
+@router.callback_query(SocialTasks.CHOOSE_ACCOUNTS, fabrics.InlineCallbacks.filter(F.action == 'IDs'))
+@router.callback_query(SocialTasks.CHOOSE_ACCOUNTS, fabrics.ProfilesPagination.filter(F.action.in_(['next', 'prev'])))
 async def get_profiles_ids_choice(
         call: CallbackQuery,
         callback_data: fabrics.InlineCallbacks | fabrics.ProfilesPagination,
