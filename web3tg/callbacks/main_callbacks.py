@@ -18,7 +18,7 @@ async def return_to_main_menu(call: CallbackQuery, callback_data: fabrics.Inline
 
 
 @router.callback_query(fabrics.InlineCallbacks.filter(F.action == 'Таски'))
-@router.callback_query(SocialTasks.INPUT_DATA, fabrics.ProfilesPagination.filter(F.action == 'Таски'))
+@router.callback_query(SocialTasks.CHOOSE_ACCOUNTS, fabrics.ProfilesPagination.filter(F.action == 'Таски'))
 async def return_to_tasks(
         call: CallbackQuery,
         callback_data: fabrics.InlineCallbacks | fabrics.ProfilesPagination,
