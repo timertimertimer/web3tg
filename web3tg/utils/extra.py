@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from web3db.models import RemoteProfile as Profile
+    from web3db.models import Profile
 
 from web3tg.utils import twitter_actions
 

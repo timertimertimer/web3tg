@@ -11,7 +11,7 @@ from random import uniform
 from twitter import Client, Account
 from twitter.errors import HTTPException, Unauthorized, AccountSuspended, FailedToFindDuplicatePost
 from twitter.models import User, Tweet
-from web3db.models import RemoteProfile as Profile
+from web3db.models import Profile
 from web3mt.utils import sleep
 
 from .db import db

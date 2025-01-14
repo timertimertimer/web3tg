@@ -2,7 +2,7 @@ import asyncio
 import random
 import pyotp
 from aiogram import Bot
-from web3db.models import RemoteProfile as Profile
+from web3db.models import Profile
 from web3db.core import ModelType
 from web3tg.utils.tw import *
 from web3tg.utils.db import db

@@ -10,7 +10,7 @@ from web3tg.utils.bot_commands import show_profiles_tasks, edit_dialog_message
 from web3tg.utils.social_tasks import ProfilesInteraction
 
 if TYPE_CHECKING:
-    from web3db import RemoteProfile
+    from web3db import Profile
 
 router = Router()
 
@@ -121,7 +121,7 @@ async def two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks
 async def twitter_two_factor(call: CallbackQuery, callback_data: fabrics.InlineCallbacks, state: FSMContext):
     social = callback_data.action
     await state.update_data(social=social)
-    profiles: list['RemoteProfile'] = await ProfilesInteraction.get_profiles_models_with_2fa(social)
+    profiles: list['Profile'] = await ProfilesInteraction.get_profiles_models_with_2fa(social)
     await state.update_data(profiles_with_totp=profiles)
     await edit_dialog_message(
         call.message,
